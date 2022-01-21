@@ -1,0 +1,270 @@
+---
+title: "Votos brasileiros na AGNU"
+output: html_notebook
+---
+
+Carregar as bibliotecas relevantes:
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+```
+
+Importar o dataframe que será utilizado:
+
+```{r}
+load(url("https://dataverse.harvard.edu/api/access/datafile/4624865"))
+```
+
+<br>
+
+### Gráfico 1: _heatmap_
+
+Será considerado o período entre as sessões 70 e 75 da AGNU, comparando os _ideal point distance_ do Brasil com os EUA, países do Mercosul e países do BRICS. Cabe assim reduzir a base de dados para conter apenas as observações relevantes. Igualmente, a maior parte dessas variáveis é irrelevante para os objetivos propostos, podendo ser filtradas para fora da base de dados.
+
+```{r}
+un_data <- dfAgree %>%
+  filter(session.x >= 70) %>%
+  filter(Countryname.x == "Brazil") %>%
+  filter(Countryname.y == "United States"
+         |Countryname.y == "Argentina"
+         |Countryname.y == "Paraguay"
+         |Countryname.y == "Uruguay"
+         |Countryname.y == "Venezuela"
+         |Countryname.y == "China"
+         |Countryname.y == "Russia"
+         |Countryname.y == "India"
+         |Countryname.y == "South Africa") %>%
+    ungroup(ccode1) %>%
+  select(session.x, Countryname.y, IdealPointDistance)
+
+un_data
+```
+
+<br>
+
+Isto posto, algumas variáveis relevantes não estão inclusas a priori. Por exemplo, sendo a lógica da pesquisa comparar a evolução da posição brasileira com relação a alguns de seus principais aliados, recortados aqui em três grupos (EUA; Mercosul; e BRICS), é útil criar novas variáveis para identificá-los. Aproveita-se para também traduzir os nomes dos Estados trabalhados para o português, nos casos onde a grafia em inglês for distinta.
+
+```{r}
+un_data$Countryname.y <- recode(un_data$Countryname.y,
+                        "United States" = "Estados Unidos",
+                        "Paraguay" = "Paraguai",
+                        "Uruguay" = "Uruguai",
+                        "India" = "Índia",
+                        "Russia" = "Rússia",
+                        "South Africa" = "África do Sul")
+
+un_data$grupo <- recode(un_data$Countryname.y,
+                        "Estados Unidos" = 1,
+                        "Argentina" = 2,
+                        "Paraguai" = 2,
+                        "Uruguai" = 2,
+                        "Venezuela" = 2,
+                        "China" = 3,
+                        "Índia" = 3,
+                        "Rússia" = 3,
+                        "África do Sul" = 3)
+
+un_data
+```
+
+<br>
+
+Com os dados tratados, gera-se um heatmap.
+
+```{r}
+g11 <- ggplot(un_data, aes(x = session.x, y = reorder(
+  factor(Countryname.y, levels = rev(levels(factor(Countryname.y)))),-grupo),
+  fill=IdealPointDistance))+
+  geom_tile()+
+  geom_text(aes(label = format(round(IdealPointDistance, 3), size = 3)))+
+  scale_fill_gradient(low="deepskyblue", high="orangered") +
+  theme_minimal()+
+  scale_x_continuous(
+    breaks = seq(from = 70, to = 75,by = 1),
+    position = "top")+
+  labs(y = element_blank(),
+       x = element_blank())+
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 14))+
+  coord_cartesian(xlim = c(69.7,75.3), ylim = c(1, 12))+
+  annotate("text", 70, 11, label = "Vieira", size = 4)+
+  annotate("text", 71, 11, label = "Serra", size = 4)+
+  annotate("text", 72.5, 11, label = "Nunes", size = 4)+
+  annotate("text", 74.5, 11, label = "Araújo", size = 4)+
+  annotate("text", 70, 10, label = "Sessão 70", size = 4)+
+  annotate("text", 71, 10, label = "Sessão 71", size = 4)+
+  annotate("text", 72, 10, label = "Sessão 72", size = 4)+
+  annotate("text", 73, 10, label = "Sessão 73", size = 4)+
+  annotate("text", 74, 10, label = "Sessão 74", size = 4)+
+  annotate("text", 75, 10, label = "Sessão 75", size = 4)+
+  annotate("text", 71.5, 12, label = "T1", size = 4)+
+  annotate("text", 74.5, 12, label = "T2", size = 4)
+
+g11
+```
+
+<br>
+
+Como a intenção é verificar o impacto da PE bolsonarista, cabe agora criar um segundo banco de dados, que divida o primeiro em dois períodos (T1 e T2), extraindo a média de cada um de modo a permitir o cálculo da diferença entre entre as médias dos dois períodos.
+
+```{r}
+t1 <- un_data %>%
+  filter(session.x <= 73)
+
+t1 <- aggregate(t1[,3], list(t1$Countryname.y), mean) %>%
+   rename(country = Group.1) %>%
+   rename(mean_t1 = IdealPointDistance)
+
+t2 <- un_data %>%
+  filter(session.x >= 74)
+
+t2 <- aggregate(t2[,3], list(t2$Countryname.y), mean) %>%
+   rename(country = Group.1) %>%
+   rename(mean_t2 = IdealPointDistance)
+
+un_change <- merge(t1, t2)
+un_change$change <- t2$mean_t2 - t1$mean_t1
+
+un_change$grupo <- recode(un_change$country,
+                        "Estados Unidos" = 1,
+                        "Argentina" = 2,
+                        "Paraguai" = 2,
+                        "Uruguai" = 2,
+                        "Venezuela" = 2,
+                        "China" = 3,
+                        "Índia" = 3,
+                        "Rússia" = 3,
+                        "África do Sul" = 3)
+
+un_change
+```
+
+<br>
+
+Feito isso, os dados estão prontos para se criar a segunda parte do gráfico 1, contendo os valores referentes às variações nas médias entre T1 e T2:
+
+```{r}
+g12 <- ggplot(un_change, aes(x = 1, y = reorder(
+  factor(country, levels = rev(levels(factor(country)))), -grupo), fill=change))+
+  geom_tile()+
+  geom_text(aes(label = format(round(change, 3), size = 3)))+
+  scale_fill_gradient(low="deepskyblue", high="orangered")+
+  theme_minimal()+
+  labs(y = element_blank(),
+       x = element_blank())+
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(), 
+        axis.ticks.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 12))+
+  coord_cartesian(xlim = c(1,1), ylim = c(1, 12))+
+  annotate("text", 1, 10.5, label = "Variação na média
+entre T1 e T2", size = 4)
+
+g12
+```
+
+<br>
+
+Para concluir, une-se os dois gráficos:
+
+```{r}
+g1 <- plot_grid(g11, g12, align = "h", ncol = 2, rel_widths = c(4/5, 1/5))
+g1
+```
+
+<br>
+
+### Gráfico 2
+
+O gráfico 2 busca identificar se, durante a gestão Araújo, a distância entre os pontos ideiais do Brasil com os os demais países analisados se caracterizou como pontos _outliers_ dentro do período democrático brasileiro. Assim, recorre a um período maior que o anterior, demandando um novo recorte do banco de dados original.
+
+```{r}
+un_data2 <- dfAgree %>%
+  filter(session.x >= 40) %>%
+  filter(iso3c.x == "BRA") %>%
+  filter(iso3c.y == "USA"
+         |iso3c.y == "ARG"
+         |iso3c.y == "PRY"
+         |iso3c.y == "URY"
+         |iso3c.y == "VEN"
+         |iso3c.y == "CHN"
+         |iso3c.y == "RUS"
+         |iso3c.y == "IND"
+         |iso3c.y == "ZAF") %>%
+  ungroup(ccode1) %>%
+  select(session.x, iso3c.y, IdealPointDistance)
+
+un_data2
+```
+
+<br>
+
+Similarmente, como a intenção é comparar a gestão Araújo com demais anos da amostra, é necessário gerar um novo banco de dados, que separe os anos nos quais o ex-ministro esteve à frente do MRE.
+
+```{r}
+araujo <- un_data2 %>%
+  filter(session.x >= 74)
+
+araujo
+```
+
+<br>
+
+Com os dados tratados, avança-se para o gráfico, destacando em vermelho os anos da gestão Araújo.
+```{r}
+g2 <- ggplot(un_data2, aes(x = iso3c.y, y = IdealPointDistance))+
+  geom_boxplot()+
+  geom_point(data = araujo, color = "red")+
+  theme_minimal()+
+  labs(x = element_blank(),
+       y = element_blank())
+
+g2
+```
+
+<br>
+
+Por último, para garantir a preservação dos dados, exporta-se as bases de dados e os plots gerados para os formatos csv e png:
+```{r}
+#bases de dados
+write.csv(un_data, file = "filtered_data/un_data.csv")
+write.csv(un_change, file = "filtered_data/un_change.csv")
+write.csv(un_data2, file = "filtered_data/un_data2.csv")
+write.csv(araujo, file = "filtered_data/araujo.csv")
+
+
+#plots
+png(filename = "plots/g11.png")
+plot(g11)
+dev.off()
+
+png(filename = "plots/g12.png")
+plot(g12)
+dev.off()
+
+png(filename = "plots/g1.png", width = 600)
+plot(g1)
+dev.off()
+
+png(filename = "plots/g2.png")
+plot(g2)
+dev.off()
+```
+
+<br>
+
+### Conclusão:
+
+Embora a gestão Bolsonaro/Araújo do MRE tenha de fato se aproximado dos EUA, essa aproximação provavelmente só se deu em pautas na quais os EUA fizeram forte lobby sobre a delegação brasileira, fugindo muito pouco da normalidade dos padrões históricos construídos entre os dois Estados e mantendo suas votações consideravelmente afastadas. A maior mudança foi com relação a vizinha Venezuela, onde foi acentuada a tendencia de afastamento que se iniciou ainda durante a gestão de Aloysio Nunes no comando do ministério. Apesar da retórica anti-China propagada pela presidência, os votos de Brasil e China se mantiveram próximos, ficando dentro da normalidade do padrão construído desde a redemocratização brasileira.
